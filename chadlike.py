@@ -37,6 +37,10 @@ class Event:
 
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
 SPECIFIC = {
+    "apt": {"install": "package_install", "reinstall": "package_install",
+            "remove": "package_remove", "purge": "package_remove",
+            "update": "package_update", "upgrade": "package_update", "full-upgrade": "package_update",
+            "autoremove": "package_cleanup", "clean": "package_cleanup", "autoclean": "package_cleanup"},
     "dnf": {"install": "package_install", "remove": "package_remove",
             "upgrade": "package_update", "autoremove": "package_cleanup"},
     "flatpak": {"install": "package_install", "uninstall": "package_remove",
@@ -46,15 +50,35 @@ SPECIFIC = {
     "docker": {name: "docker" for name in ("up", "down", "start", "stop", "restart", "pull", "build")},
 }
 SIMPLE = {
+    "fastfetch": "system_info", "neofetch": "system_info", "hyfetch": "system_info", "screenfetch": "system_info",
+    "chmod": "permissions_change", "chown": "ownership_change",
+    "btop": "monitor_exit", "htop": "monitor_exit", "top": "monitor_exit",
     "ssh": "ssh", "mkdir": "directory_create", "rm": "delete", "rmdir": "delete",
     "cp": "copy", "mv": "move", "curl": "network", "wget": "network",
     "tar": "archive", "zip": "archive", "unzip": "archive",
     "nano": "editor_exit", "vim": "editor_exit", "nvim": "editor_exit", "clear": "clear",
 }
+ARCH_MANAGERS = {"pacman", "yay", "paru"}
+ARCH_OPERATIONS = {"-S": "package_install", "-U": "package_install",
+                   "-R": "package_remove", "-Syu": "package_update", "-Sc": "package_cleanup"}
+ARCH_VALUE_OPTIONS = {"-b", "-r", "--dbpath", "--root", "--sysroot", "--config",
+                      "--arch", "--cachedir", "--color", "--gpgdir", "--hookdir", "--logfile",
+                      "--assume-installed", "--ignore", "--ignoregroup", "--overwrite",
+                      "--builddir", "--editor", "--editorflags", "--mflags", "--makepkg", "--pacman"}
+ARCH_LONG_FLAGS = {"--sync": "S", "--upgrade": "U", "--remove": "R", "--query": "Q",
+                   "--database": "D", "--files": "F", "--deptest": "T",
+                   "--refresh": "y", "--sysupgrade": "u", "--clean": "c",
+                   "--search": "s", "--info": "i", "--list": "l", "--groups": "g",
+                   "--print": "p", "--print-format": "p", "--downloadonly": "w",
+                   "--help": "h", "--version": "V"}
 CATEGORIES = {**SIMPLE, **{f"{name} {sub}": kind
               for name, commands in SPECIFIC.items() for sub, kind in commands.items()},
+              **{f"{name} {option}": kind for name in ARCH_MANAGERS
+                 for option, kind in ARCH_OPERATIONS.items()},
+              "sudo rm -rf": "sudo_rm_rf",
               "flatpak uninstall --unused": "package_cleanup"}
 VALUE_OPTIONS = {
+    "apt": {"-o", "--option", "-c", "--config-file", "-t", "--target-release"},
     "sudo": {"-u", "-g", "-h", "-p", "-C", "-T", "-R", "-D", "--user", "--group", "--host", "--prompt"},
     "env": {"-u", "--unset", "-C", "--chdir"},
     "dnf": {"--installroot", "--releasever", "--config", "-c", "--setopt", "--enablerepo", "--disablerepo"},
@@ -65,12 +89,16 @@ VALUE_OPTIONS = {
 }
 
 
-def skip_options(tokens: list[str], pos: int, command: str) -> int:
+def skip_options(tokens: list[str], pos: int, command: str) -> int | None:
     while pos < len(tokens) and tokens[pos].startswith("-"):
         token = tokens[pos]
         pos += 1
         if token == "--":
             break
+        if (token in ("--help", "--version")
+                or (command == "command" and ("v" in token or "V" in token))
+                or (command == "env" and (token == "-S" or token.startswith("--split-string")))):
+            return None
         if token in VALUE_OPTIONS.get(command, set()):
             pos += 1
     return pos
@@ -109,20 +137,70 @@ def skip_sudo_options(tokens: list[str], pos: int) -> int | None:
         if token == "--":
             break
         if token.startswith("--"):
-            if token.split("=", 1)[0] in ("--list", "--validate"):
+            if token.split("=", 1)[0] in ("--list", "--validate", "--edit", "--help", "--version"):
                 return None
             if token in VALUE_OPTIONS["sudo"]:
                 pos += 1
         else:
             # Short flags can be combined; a value-taking flag consumes the rest.
             for index, flag in enumerate(token[1:], 1):
-                if flag in "lv":
+                if flag in "lveV":
                     return None
                 if "-" + flag in VALUE_OPTIONS["sudo"]:
                     if index == len(token) - 1:
                         pos += 1
                     break
     return pos
+
+
+def arch_operation(tokens: list[str], pos: int) -> str | None:
+    """Normalize operation flags; option values and targets never become metadata."""
+    flags = set()
+    while pos < len(tokens):
+        token = tokens[pos]
+        pos += 1
+        if token == "--":
+            break
+        if token in ARCH_VALUE_OPTIONS:
+            pos += 1
+        elif token.startswith("--"):
+            flags.update("p" if token.startswith("--print-format=") else ARCH_LONG_FLAGS.get(token, ""))
+        elif token.startswith("-"):
+            for index, flag in enumerate(token[1:], 1):
+                if "-" + flag in ARCH_VALUE_OPTIONS:
+                    if index == len(token) - 1:
+                        pos += 1
+                    break
+                flags.add(flag)
+    operations = flags & set("SRUQDFTYPG")
+    if len(operations) != 1 or flags & set("hVpw"):
+        return None
+    if operations == {"R"}:
+        return "-R"
+    if operations == {"U"}:
+        return "-U"
+    if operations == {"S"} and not flags & set("silg"):
+        if "c" in flags:
+            return "-Sc"
+        if flags & set("yu"):
+            return "-Syu"
+        return "-S"
+    return None
+
+
+def rm_recursive_force(tokens: list[str]) -> bool:
+    recursive = force = False
+    for token in tokens:
+        if token == "--":
+            break
+        if token == "--recursive":
+            recursive = True
+        elif token == "--force":
+            force = True
+        elif token.startswith("-") and not token.startswith("--"):
+            recursive |= "r" in token or "R" in token
+            force |= "f" in token
+    return recursive and force
 
 
 def command_kind(command: str) -> tuple[str, str] | None:
@@ -138,20 +216,20 @@ def command_kind(command: str) -> tuple[str, str] | None:
     if not tokens:
         return None
     pos = 0
+    sudo = False
     while pos < len(tokens):
         name = tokens[pos].rsplit("/", 1)[-1]
         if ASSIGNMENT.match(tokens[pos]):
             pos += 1
         elif name in ("sudo", "env", "command", "builtin", "noglob"):
-            # command -v/-V and sudo -l/-v do not execute the following command.
-            if name == "command" and any(t in ("-v", "-V") for t in tokens[pos + 1:pos + 2]):
-                return None
+            # Informational/editing wrapper modes do not execute the command.
             if name == "sudo":
+                sudo = True
                 pos = skip_sudo_options(tokens, pos + 1)
-                if pos is None:
-                    return None
             else:
                 pos = skip_options(tokens, pos + 1, name)
+            if pos is None:
+                return None
         else:
             break
     if pos >= len(tokens):
@@ -163,14 +241,23 @@ def command_kind(command: str) -> tuple[str, str] | None:
         if token in ("--help", "--version"):
             return None
     if name in SIMPLE:
+        if name == "rm" and sudo and rm_recursive_force(tokens[pos + 1:]):
+            return "sudo_rm_rf", "sudo rm -rf"
         return SIMPLE[name], name
+    if name in ARCH_MANAGERS:
+        operation = arch_operation(tokens, pos + 1)
+        return (ARCH_OPERATIONS[operation], f"{name} {operation}") if operation else None
     if name not in SPECIFIC:
         return None
     pos = skip_options(tokens, pos + 1, name)
+    if pos is None:
+        return None
     if name == "docker":
         if pos >= len(tokens) or tokens[pos] != "compose":
             return None
         pos = skip_options(tokens, pos + 1, name)
+        if pos is None:
+            return None
     if pos >= len(tokens):
         return None
     subcommand = tokens[pos]

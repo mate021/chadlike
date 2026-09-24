@@ -137,9 +137,15 @@ helper, closes its pipes, and removes its hooks in the current shell. Set
 | Commands | What Chad reacts to |
 | --- | --- |
 | `dnf install/remove/upgrade/autoremove` | Package operations |
+| `apt install/reinstall/remove/purge/update/upgrade/full-upgrade/autoremove/clean/autoclean` | Package install, removal, update, or cleanup |
+| `pacman`, `yay`, `paru` with `-S`, `-U`, `-R`, `-Syu`, `-Sc`/`-Scc` | Package install (including local packages), removal, update, or cache cleanup |
 | `flatpak install/uninstall/update`, `uninstall --unused` | Flatpak package operations |
 | `flatpak run`, `ssh`, `nano`, `vim`, `nvim` | Application, session, or editor returning to the shell |
 | `mkdir`, `rm`, `rmdir`, `cp`, `mv` | Filesystem operations |
+| `sudo rm` with recursive and force flags | Dedicated `sudo_rm_rf` event after completion |
+| `chmod`, `chown` | Permission or ownership changes |
+| `fastfetch`, `neofetch`, `hyfetch`, `screenfetch` | Completed system information display |
+| `btop`, `htop`, `top` | Monitor returning to the shell |
 | `curl`, `wget` | Completed requests/downloads |
 | `tar`, `zip`, `unzip` | Archive operations |
 | `systemctl start/stop/restart` | Service operations |
@@ -161,6 +167,26 @@ their final shell status still supports long/failure/interruption events.
 Aliases and functions execute normally but are not expanded by the classifier.
 `--help` and `--version` do not count as completed operations; after `--`, they
 remain literal command arguments.
+
+For `pacman`, `yay`, and `paru`, combined and separate flags and their long
+forms are recognized: `-S -y -u` and `--sync --refresh --sysupgrade` normalize to
+the fixed category `<manager> -Syu`; refresh-only `-Sy` also uses the update
+event. Cache cleanup takes precedence over refresh/upgrade flags. Queries,
+searches, help, print-only and download-only modes are not package mutations.
+Bare `yay`/`paru` and helper-specific operations are not classified.
+These mappings follow [pacman's operation flags](https://man.archlinux.org/man/pacman.8.en).
+
+`sudo_rm_rf` requires an actual `sudo` wrapper around `rm` and both recursive
+(`-r`, `-R`, `--recursive`) and force (`-f`, `--force`) flags before `--`.
+Separate or combined flags work, including `sudo -u root rm -r -f target` and
+`sudo rm -fr target`. Plain `rm -rf`, `sudo rm -r`, and `sudo rm -f` retain the
+ordinary delete event. Flags in filenames, wrapper option values, or arguments
+after `--` do not qualify. Only the fixed category `sudo rm -rf` is shared;
+targets, modes, owners, package names, and other arguments stay in the shell.
+The new fallback pools are `sudo_rm_rf`, `system_info`, `permissions_change`,
+`ownership_change`, and `monitor_exit`; failed operations use `generic_failure`.
+All comments follow completion, including monitor exit; status 130 still takes
+precedence over a recognized operation.
 
 Exit code 130 means *possible SIGINT*: a program can deliberately return it.
 Chad records that uncertainty and does not claim proof of a keypress. Ctrl+C at

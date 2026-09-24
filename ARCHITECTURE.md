@@ -12,6 +12,16 @@ One Python standard-library helper belongs to each interactive zsh session.
 and writes one small atomic packet to a nonblocking FIFO. No Python or HTTP
 process starts in either hook. Oversized packets and full pipes are dropped.
 
+The Zsh classifier and Python's in-process classifier use the same fixed
+categories. Apt subcommands and pacman/yay/paru operation flags map to existing
+package events; Arch-style flags normalize to `-S`, `-U`, `-R`, `-Syu`, or `-Sc`.
+System information tools, chmod/chown, and process monitors have dedicated
+event types. A local wrapper marker and recursive/force flag checks distinguish
+`sudo rm -rf` from ordinary deletion. Parsing stops options at `--` and skips
+known option values. These temporary tokens and markers never leave the shell.
+Monitor and deletion comments use the same post-command `precmd` path as all
+other events, with interruption precedence unchanged.
+
 The helper accepts only a fixed category vocabulary with numeric status/duration
 in versioned `metadata_v1` packets. Old raw-command packets are rejected. It feeds a
 bounded queue serviced by one AI thread. The main thread remains responsive

@@ -34,7 +34,7 @@ _chadlike_skip_options() {
         if [[ $name == sudo && $token != --* ]]; then
             for (( index=2; index<=${#token}; index++ )); do
                 flag=${token[index]}
-                [[ $flag == [lve] ]] && return 1
+                [[ $flag == [lveV] ]] && return 1
                 if [[ $flag == [ughpCTRD] ]]; then
                     (( index == ${#token} )) && (( pos++ ))
                     break
@@ -42,11 +42,73 @@ _chadlike_skip_options() {
             done
         else
             case "$name:$token" in
+                apt:-o|apt:--option|apt:-c|apt:--config-file|apt:-t|apt:--target-release)
+                    (( pos++ )) ;;
                 sudo:--user|sudo:--group|sudo:--host|sudo:--prompt|env:-u|env:--unset|env:-C|env:--chdir|dnf:--installroot|dnf:--releasever|dnf:--config|dnf:-c|dnf:--setopt|dnf:--enablerepo|dnf:--disablerepo|flatpak:--installation|systemctl:-H|systemctl:--host|systemctl:-M|systemctl:--machine|systemctl:--root|git:-C|git:-c|git:--git-dir|git:--work-tree|git:--namespace|docker:--context|docker:-c|docker:--host|docker:-H|docker:--config|docker:-f|docker:--file|docker:-p|docker:--project-name|docker:--project-directory|docker:--env-file|docker:--profile)
                     (( pos++ )) ;;
             esac
         fi
     done
+    return 0
+}
+
+_chadlike_arch_operation() {
+    local token flag flags='' operations=''
+    integer index
+    while (( pos <= ${#tokens} )); do
+        token=${tokens[pos]}
+        (( pos++ ))
+        [[ $token == -- ]] && break
+        case $token in
+            -b|-r|--dbpath|--root|--sysroot|--config|--arch|--cachedir|--color|--gpgdir|--hookdir|--logfile|--assume-installed|--ignore|--ignoregroup|--overwrite|--builddir|--editor|--editorflags|--mflags|--makepkg|--pacman)
+                (( pos++ )); continue ;;
+            --sync) flags+=S ;;
+            --upgrade) flags+=U ;;
+            --remove) flags+=R ;;
+            --query) flags+=Q ;;
+            --database) flags+=D ;;
+            --files) flags+=F ;;
+            --deptest) flags+=T ;;
+            --refresh) flags+=y ;;
+            --sysupgrade) flags+=u ;;
+            --clean) flags+=c ;;
+            --search) flags+=s ;;
+            --info) flags+=i ;;
+            --list) flags+=l ;;
+            --groups) flags+=g ;;
+            --print|--print-format|--print-format=*) flags+=p ;;
+            --downloadonly) flags+=w ;;
+            --help) flags+=h ;;
+            --version) flags+=V ;;
+            --*) ;;
+            -*)
+                for (( index=2; index<=${#token}; index++ )); do
+                    flag=${token[index]}
+                    if [[ $flag == [br] ]]; then
+                        (( index == ${#token} )) && (( pos++ ))
+                        break
+                    fi
+                    flags+=$flag
+                done ;;
+        esac
+    done
+    for flag in S R U Q D F T Y P G; do
+        [[ $flags == *$flag* ]] && operations+=$flag
+    done
+    [[ ${#operations} == 1 && $flags != *[hVpw]* ]] || return 0
+    case $operations in
+        R) REPLY="$name -R" ;;
+        U) REPLY="$name -U" ;;
+        S)
+            [[ $flags != *[silg]* ]] || return 0
+            if [[ $flags == *c* ]]; then
+                REPLY="$name -Sc"
+            elif [[ $flags == *[yu]* ]]; then
+                REPLY="$name -Syu"
+            else
+                REPLY="$name -S"
+            fi ;;
+    esac
     return 0
 }
 
@@ -59,7 +121,7 @@ _chadlike_classify() {
     [[ $1 != *'$('* && $1 != *'`'* ]] || return 0
     local -a tokens
     local token name sub
-    integer pos=1 index
+    integer pos=1 index sudo_wrapped=0 recursive=0 force=0
     tokens=("${(@z)1}")
     for token in "${tokens[@]}"; do
         case $token in
@@ -73,6 +135,7 @@ _chadlike_classify() {
         if [[ $token == [a-zA-Z_][a-zA-Z_0-9]#=* ]]; then
             (( pos++ ))
         elif [[ $name == (sudo|env|command|builtin|noglob) ]]; then
+            [[ $name == sudo ]] && sudo_wrapped=1
             (( pos++ ))
             _chadlike_skip_options || return 0
         else
@@ -84,10 +147,32 @@ _chadlike_classify() {
         [[ ${tokens[index]} == -- ]] && break
         [[ ${tokens[index]} == (--help|--version) ]] && return 0
     done
+    if [[ $name == rm ]] && (( sudo_wrapped )); then
+        for (( index=pos+1; index<=${#tokens}; index++ )); do
+            token=${tokens[index]}
+            [[ $token == -- ]] && break
+            case $token in
+                --recursive) recursive=1 ;;
+                --force) force=1 ;;
+                --*) ;;
+                -*)
+                    [[ $token == *[rR]* ]] && recursive=1
+                    [[ $token == *f* ]] && force=1 ;;
+            esac
+        done
+        if (( recursive && force )); then
+            REPLY='sudo rm -rf'
+            return 0
+        fi
+    fi
     case $name in
-        ssh|mkdir|rm|rmdir|cp|mv|curl|wget|tar|zip|unzip|nano|vim|nvim|clear)
+        ssh|mkdir|rm|rmdir|cp|mv|curl|wget|tar|zip|unzip|nano|vim|nvim|clear|fastfetch|neofetch|hyfetch|screenfetch|chmod|chown|btop|htop|top)
             REPLY=$name; return 0 ;;
-        dnf|flatpak|systemctl|git|docker) ;;
+        pacman|yay|paru)
+            (( pos++ ))
+            _chadlike_arch_operation
+            return 0 ;;
+        apt|dnf|flatpak|systemctl|git|docker) ;;
         *) return 0 ;;
     esac
     (( pos++ ))
@@ -99,6 +184,8 @@ _chadlike_classify() {
     fi
     sub=${tokens[pos]-}
     case "$name $sub" in
+        'apt '(install|reinstall|remove|purge|update|upgrade|full-upgrade|autoremove|clean|autoclean))
+            REPLY="$name $sub" ;;
         'dnf '(install|remove|upgrade|autoremove)|'flatpak '(install|uninstall|update|run)|'systemctl '(start|stop|restart)|'git '(clone|pull|commit|push)|'docker '(up|down|start|stop|restart|pull|build))
             REPLY="$name $sub" ;;
     esac

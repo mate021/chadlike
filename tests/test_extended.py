@@ -13,6 +13,7 @@ import unittest
 
 from chadlike import AIError, CATEGORIES, Event, Fallback, generate, load_config, safe_text
 from test_core import FakeOllama
+from test_classification import EXTENDED_CASES
 from test_shell import ROOT, Shell
 
 
@@ -32,6 +33,11 @@ class ExtendedCoreTests(unittest.TestCase):
                     reply = fallback.choose(Event(kind, category, result, status, 1))
                     self.assertTrue(reply)
                     self.assertEqual(safe_text(reply), reply)
+                    if kind in ("ssh", "network"):
+                        pool = kind + ("_success" if result == "success" else "_failure")
+                    else:
+                        pool = kind if result == "success" else "generic_failure"
+                    self.assertIn(reply, self.config["fallback"][pool]["messages"])
 
     def test_all_numeric_config_bounds(self):
         for value in ("-1", "0", "1e100", "inf", "-inf", "nan"):
@@ -102,6 +108,56 @@ class ExtendedShellTests(unittest.TestCase):
         shell = Shell(*args, **kwargs)
         self.addCleanup(shell.close)
         return shell
+
+    def test_extended_classifier_parity(self):
+        shell = self.shell("ai_enabled = false\n")
+        for command, category in EXTENDED_CASES.items():
+            with self.subTest(command=command):
+                # Only invoke the classifier, including for destructive-looking cases.
+                shell.command(f"_chadlike_classify {shlex.quote(command)}; print -r -- $REPLY > category")
+                output = (shell.home / "category").read_text().strip()
+                self.assertEqual(output, category or "unclassified")
+                self.assertNotIn("DUMMY_SECRET", output)
+
+    def test_new_events_wait_for_completion_and_share_only_metadata(self):
+        server = FakeOllama()
+        # Harmless shell stubs block on input; no package/permission/delete operation runs.
+        names = "apt pacman yay paru fastfetch neofetch hyfetch screenfetch chmod chown btop htop top sudo"
+        setup = "\n".join(f"{name}() {{ print RUNNING; read -r response; print FINISHED; }}"
+                          for name in names.split())
+        shell = self.shell(f'debug = true\n[ollama]\nhost = "{server.host}"\n', setup=setup)
+        commands = {
+            "apt install DUMMY_SECRET": "package_install",
+            "pacman -Syu --ignore DUMMY_SECRET": "package_update",
+            "yay -Sc --cachedir DUMMY_SECRET": "package_cleanup",
+            "paru -R DUMMY_SECRET": "package_remove",
+            **{f"{name} DUMMY_SECRET": "system_info" for name in (
+                "fastfetch", "neofetch", "hyfetch", "screenfetch")},
+            "chmod 700 DUMMY_SECRET": "permissions_change",
+            "chown DUMMY_SECRET file": "ownership_change",
+            **{f"{name} DUMMY_SECRET": "monitor_exit" for name in ("btop", "htop", "top")},
+            "sudo rm -rf DUMMY_SECRET": "sudo_rm_rf",
+        }
+        with server:
+            for count, (command, kind) in enumerate(commands.items()):
+                with self.subTest(command=command):
+                    shell.drain()
+                    shell.send(command + "\n")
+                    shell.read_until(b"RUNNING\r\n")
+                    time.sleep(0.1)  # Let an incorrect preexec request reach the fake server.
+                    self.assertEqual(len(server.requests), count)
+                    shell.send("done\n")
+                    shell.read_until(b"FINISHED\r\n")
+                    output = shell.read_until(b"mode=ai reason=ok")
+                    self.assertNotIn(b"DUMMY_SECRET", output)
+                    self.assertIn(f"event={kind}".encode(), output)
+                    self.assertEqual(len(server.requests), count + 1)
+                    body = server.requests[-1][1]
+                    self.assertNotIn("DUMMY_SECRET", json.dumps(body))
+                    metadata = json.loads(body["messages"][1]["content"].split("\n", 1)[1])
+                    self.assertEqual(metadata["event"], kind)
+                    self.assertIn(metadata["category"], CATEGORIES)
+                    self.assertNotIn("command", metadata)
 
     def test_all_categories_through_shell_inspect(self):
         shell = self.shell("ai_enabled = false\n")
