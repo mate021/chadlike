@@ -292,13 +292,31 @@ def load_config(path: Path | None = None) -> dict:
         if isinstance(value, float) and not math.isfinite(value):
             value = low
         container[key] = max(low, min(high, value))
-    config["prefix"] = (safe_text(config["prefix"], 40) or "chad:") + " "
-    config["personality"]["prompt"] = config["personality"]["prompt"][:8000]
+    config["name"] = safe_text(config["name"], 32) or defaults["name"]
+
+    def render_name(text: str, default: str) -> str:
+        # Existing generated configs contain literal Chad defaults. Upgrade
+        # those in memory while leaving custom prose and the file untouched.
+        legacy = default.replace("{name}", defaults["name"]).replace(
+            "{name_lower}", defaults["name"].lower())
+        if text == legacy:
+            text = default
+        return re.sub(r"\{name(_lower)?\}",
+                      lambda match: config["name"].lower() if match[1] else config["name"], text)
+
+    prefix = render_name(config["prefix"], defaults["prefix"])
+    config["prefix"] = (safe_text(prefix, 40) or config["name"].lower() + ":") + " "
+    config["personality"]["prompt"] = render_name(
+        config["personality"]["prompt"], defaults["personality"]["prompt"])[:8000]
     for kind, pool in defaults["fallback"].items():
         custom = config["fallback"].get(kind)
         messages = custom.get("messages") if isinstance(custom, dict) else None
-        valid = [clean for msg in messages if (clean := safe_text(msg))] if isinstance(messages, list) else []
-        config["fallback"][kind] = {"messages": valid or pool["messages"]}
+        # Match each legacy default independently, including reordered pools.
+        legacy = {msg.replace("{name}", defaults["name"]): msg for msg in pool["messages"]}
+        valid = [clean for msg in messages if isinstance(msg, str)
+                 if (clean := safe_text(render_name(msg, legacy.get(msg, msg))))] if isinstance(messages, list) else []
+        config["fallback"][kind] = {"messages": valid or [
+            render_name(msg, msg) for msg in pool["messages"]]}
     return config
 
 
@@ -548,7 +566,7 @@ class Engine:
             text, error = None, "invalid_output"
         self.emit(self.config["prefix"] + (text or self.fallback.choose(event)))
         if self.config["debug"]:
-            self.emit(f"chad debug: event={event.kind} exit={event.exit_code} duration={event.duration:.2f} "
+            self.emit(f"{self.config['name'].lower()} debug: event={event.kind} exit={event.exit_code} duration={event.duration:.2f} "
                       f"mode={'ai' if text else 'fallback'} reason={error or 'ok'} queued={self.requests.qsize()}")
 
     def poll(self):
@@ -577,16 +595,19 @@ def run_session(directory: Path, parent: int):
     for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
         signal.signal(sig, stop)
 
-    def emit(text):
+    def emit(text, stamp=None):
         clean = safe_text(text, 600)
         if not clean:
             return
-        packet = f"{time.time():.3f}\t{clean}\n".encode()
+        packet = f"{stamp or f'{time.time():.3f}'}\t{clean}\n".encode()
         try:
             os.write(outgoing, packet)
         except (BlockingIOError, BrokenPipeError):
             pass
 
+    # Cache the configured emergency line in zsh without synchronous startup IO.
+    if config["enabled"]:
+        emit(config["prefix"] + f"Brain gone. {config['name']} still here.", "emergency")
     engine = Engine(config, emit)
     buffer = bytearray()
     selector = selectors.DefaultSelector()

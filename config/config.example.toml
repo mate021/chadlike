@@ -5,7 +5,10 @@ minimum_comment_interval_seconds = 1
 show_startup_message = true
 # Deprecated compatibility setting. Commands are always metadata-only, even if true.
 include_command_in_ai_context = false
-prefix = "chad: "
+# Name used in tags, the AI personality, and fallback sentences.
+name = "Chad"
+# {name} preserves spelling; {name_lower} uses lowercase.
+prefix = "{name_lower}: "
 debug = false
 max_response_age_seconds = 15
 
@@ -19,7 +22,7 @@ timeout_seconds = 3.0
 
 [personality]
 prompt = """
-You are Chad, a snarky terminal companion.
+You are {name}, a snarky terminal companion.
 React to something the user has already done in their Linux terminal.
 Be technically competent, dry, sarcastic, mildly smug, concise, never hostile.
 Write exactly one short sentence, preferably 5-15 words.
@@ -35,58 +38,58 @@ Never output credentials, private keys, tokens, or invented credential values.
 """
 
 [fallback.startup]
-messages = ["Chad awake. Brain still loading.", "Terminal here. Chad also here."]
+messages = ["{name} awake. Brain still loading.", "Terminal here. {name} also here."]
 [fallback.package_install]
-messages = ["Package installed. Chad did computer.", "Software go in. Good."]
+messages = ["Package installed. {name} did computer.", "Software go in. Good."]
 [fallback.package_remove]
-messages = ["Package gone. More room for air.", "Software go out. Chad wave."]
+messages = ["Package gone. More room for air.", "Software go out. {name} wave."]
 [fallback.package_update]
-messages = ["Package newer now. Chad same.", "Update done. Numbers bigger."]
+messages = ["Package newer now. {name} same.", "Update done. Numbers bigger."]
 [fallback.package_cleanup]
-messages = ["Old bits gone. Chad swept.", "Computer less full. Brain still empty."]
+messages = ["Old bits gone. {name} swept.", "Computer less full. Brain still empty."]
 [fallback.flatpak_exit]
-messages = ["App closed. Box nap now.", "Flat thing stopped. Chad watching."]
+messages = ["App closed. Box nap now.", "Flat thing stopped. {name} watching."]
 [fallback.ssh_success]
-messages = ["Far computer done. Chad home.", "Wire visit over. Chad wave."]
+messages = ["Far computer done. {name} home.", "Wire visit over. {name} wave."]
 [fallback.ssh_failure]
-messages = ["SSH failed. Wire said no.", "Far computer angry. Chad stay here."]
+messages = ["SSH failed. Wire said no.", "Far computer angry. {name} stay here."]
 [fallback.directory_create]
-messages = ["New folder. Empty like Chad.", "Directory made. Put stuff in hole."]
+messages = ["New folder. Empty like {name}.", "Directory made. Put stuff in hole."]
 [fallback.delete]
-messages = ["File gone. Chad saw nothing.", "Thing deleted. Chad forget already."]
+messages = ["File gone. {name} saw nothing.", "Thing deleted. {name} forget already."]
 [fallback.copy]
-messages = ["Thing now two. Chad count good.", "Copy done. Twins happen."]
+messages = ["Thing now two. {name} count good.", "Copy done. Twins happen."]
 [fallback.move]
-messages = ["Thing over there now. Chad helped.", "File moved. Tiny legs fast."]
+messages = ["Thing over there now. {name} helped.", "File moved. Tiny legs fast."]
 [fallback.network_success]
-messages = ["Internet gave thing. Chad accept.", "Wire worked. Bytes came home."]
+messages = ["Internet gave thing. {name} accept.", "Wire worked. Bytes came home."]
 [fallback.network_failure]
-messages = ["Internet said no. Chad sad.", "Wire empty. Computer hungry."]
+messages = ["Internet said no. {name} sad.", "Wire empty. Computer hungry."]
 [fallback.archive]
-messages = ["File box done. Chad like box.", "Archive finished. Bits wore suitcase."]
+messages = ["File box done. {name} like box.", "Archive finished. Bits wore suitcase."]
 [fallback.editor_exit]
-messages = ["Editor closed. Words had enough.", "Text done. Chad cannot read."]
+messages = ["Editor closed. Words had enough.", "Text done. {name} cannot read."]
 [fallback.service_start]
-messages = ["Service awake. Chad poked.", "Thing started. It go now."]
+messages = ["Service awake. {name} poked.", "Thing started. It go now."]
 [fallback.service_stop]
-messages = ["Service asleep. Chad tiptoe.", "Thing stopped. Good nap."]
+messages = ["Service asleep. {name} tiptoe.", "Thing stopped. Good nap."]
 [fallback.service_restart]
-messages = ["Service wake again. Chad blink.", "Off then on. Chad wizard."]
+messages = ["Service wake again. {name} blink.", "Off then on. {name} wizard."]
 [fallback.docker]
-messages = ["Docker done. Box did thing.", "Box command finished. Chad nod."]
+messages = ["Docker done. Box did thing.", "Box command finished. {name} nod."]
 [fallback.git_clone]
-messages = ["Code copied. Chad got bucket.", "New code here. Chad adopted."]
+messages = ["Code copied. {name} got bucket.", "New code here. {name} adopted."]
 [fallback.git_pull]
-messages = ["Code came down. Chad catch.", "Pull good. Internet gave code."]
+messages = ["Code came down. {name} catch.", "Pull good. Internet gave code."]
 [fallback.git_commit]
-messages = ["Code remembered. Chad cannot.", "Commit done. Computer keep thought."]
+messages = ["Code remembered. {name} cannot.", "Commit done. Computer keep thought."]
 [fallback.git_push]
-messages = ["Git push good. Code go internet.", "Code sent. Chad throw far."]
+messages = ["Git push good. Code go internet.", "Code sent. {name} throw far."]
 [fallback.clear]
-messages = ["Screen empty. Like brain.", "Words gone. Chad clean."]
+messages = ["Screen empty. Like brain.", "Words gone. {name} clean."]
 [fallback.command_interrupted]
-messages = ["Command stopped funny. Chad blink.", "Command bonk. Chad still here."]
+messages = ["Command stopped funny. {name} blink.", "Command bonk. {name} still here."]
 [fallback.long_command]
-messages = ["Big command finished. Chad survived too.", "Long wait done. Chad aged."]
+messages = ["Big command finished. {name} survived too.", "Long wait done. {name} aged."]
 [fallback.generic_failure]
-messages = ["Command fail. Computer angry.", "Thing not work. Chad understand nothing."]
+messages = ["Command fail. Computer angry.", "Thing not work. {name} understand nothing."]

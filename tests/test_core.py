@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from chadlike import AIError, Engine, Event, Fallback, classify, classify_metadata, event_prompt, generate, load_config, main, safe_text, safe_reply
+from chadlike import AIError, DEFAULT_PATH, Engine, Event, Fallback, classify, classify_metadata, event_prompt, generate, load_config, main, safe_text, safe_reply
 
 
 class FakeOllama:
@@ -112,6 +112,62 @@ messages = ["Code bonk."]
             self.assertIs(config["enabled"], enabled)
             self.assertIsInstance(config["ollama"]["timeout_seconds"], float)
             self.assertTrue(config["fallback"]["git_push"]["messages"])
+
+    def test_name_updates_defaults_and_legacy_configs_without_rewriting(self):
+        legacy = DEFAULT_PATH.read_text().replace('{name_lower}', 'chad').replace('{name}', 'Chad')
+        legacy = legacy.replace('name = "Chad"\n', '')
+        for contents in ('name = "Boris"\n', 'name = "Boris"\n' + legacy):
+            with self.subTest(legacy=len(contents) > 30):
+                self.path.write_text(contents)
+                config = load_config(self.path)
+                self.assertEqual(config["name"], "Boris")
+                self.assertEqual(config["prefix"], "boris: ")
+                self.assertIn("You are Boris,", config["personality"]["prompt"])
+                self.assertIn("Package installed. Boris did computer.",
+                              config["fallback"]["package_install"]["messages"])
+                self.assertNotIn("Chad", str(config["fallback"]))
+                self.assertNotIn("{name", str(config))
+                self.assertEqual(self.path.read_text(), contents)
+
+    def test_name_templates_preserve_custom_text_and_other_braces(self):
+        self.path.write_text('''name = "Björk"
+prefix = "[{name}] "
+[personality]
+prompt = "You are {name}; literal {other} and Chad."
+[fallback.startup]
+messages = ["{name} awake. {name_lower} sleepy. {other}", "Chad is a friend."]
+''')
+        config = load_config(self.path)
+        self.assertEqual(config["prefix"], "[Björk] ")
+        self.assertEqual(config["personality"]["prompt"], "You are Björk; literal {other} and Chad.")
+        self.assertEqual(config["fallback"]["startup"]["messages"],
+                         ["Björk awake. björk sleepy. {other}", "Chad is a friend."])
+
+    def test_invalid_names_and_fallback_pools_use_safe_named_defaults(self):
+        for value in ('""', '"   "', '42', '[]', '"' + 'x' * 33 + '"'):
+            with self.subTest(value=value):
+                self.path.write_text('name = ' + value)
+                config = load_config(self.path)
+                self.assertEqual(config["name"], "Chad")
+                self.assertEqual(config["prefix"], "chad: ")
+        self.path.write_text('''name = "Boris"
+prefix = ""
+[fallback.startup]
+messages = [42, ""]
+''')
+        config = load_config(self.path)
+        self.assertEqual(config["prefix"], "boris: ")
+        self.assertEqual(config["fallback"]["startup"]["messages"],
+                         ["Boris awake. Brain still loading.", "Terminal here. Boris also here."])
+
+    def test_name_is_sanitized_and_substituted_literally(self):
+        self.path.write_text('name = "\\u001b[31mBoris\\u001b[0m\\n"')
+        config = load_config(self.path)
+        self.assertEqual(config["name"], "Boris")
+        self.assertEqual(config["prefix"], "boris: ")
+        self.path.write_text("name = '{name_lower}\\1'")
+        config = load_config(self.path)
+        self.assertIn(r"You are {name_lower}\1,", config["personality"]["prompt"])
 
 
     def test_privacy_configuration_fails_closed(self):

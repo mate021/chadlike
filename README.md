@@ -87,7 +87,8 @@ long_command_seconds = 30
 minimum_comment_interval_seconds = 1
 show_startup_message = true
 include_command_in_ai_context = false # Legacy setting; true is ignored.
-prefix = "chad: "
+name = "Chad"
+prefix = "{name_lower}: "
 debug = false
 max_response_age_seconds = 15
 
@@ -99,6 +100,15 @@ temperature = 0.9
 num_predict = 40
 timeout_seconds = 3.0
 ```
+
+Set `name = "Boris"` at the top level (before `[ollama]`) to get `boris: `
+tags, Boris in the AI personality, and lines such as `Package installed. Boris did
+computer.` This also changes debug labels and the helper-crash message.
+Custom prefixes, personality prompts, and fallback messages support `{name}` and
+`{name_lower}` placeholders. Other braces remain literal. Old copies of the
+built-in Chad defaults follow the new name automatically; custom text stays as
+written unless it uses a placeholder. Names are limited to 32 characters;
+empty or invalid names use `Chad`.
 
 The client uses Ollama's [documented `/api/chat` request](https://docs.ollama.com/api/chat):
 `think` and `stream=false` are top-level fields; `temperature` and `num_predict`
@@ -179,8 +189,9 @@ The [architecture note](ARCHITECTURE.md) describes the small design:
   the shell additionally have a fixed 15-second display age limit.
 - Normal shell exit, `chadlike-off`, and parent death remove the private
   session pipes. A crashed helper triggers one small emergency fallback at a
-  subsequent prompt; open a new shell to restart it. That emergency sentence is
-  the only shell-side hardcoded fallback and uses the default prefix.
+  subsequent prompt; open a new shell to restart it. The helper supplies that
+  sentence with the configured name and prefix during initialization. A helper
+  that dies before supplying it stays silent.
 
 Existing hook functions remain intact. Returning zero from Chad's `precmd`
 allows later hooks to run; zsh preserves the command status around dispatch.

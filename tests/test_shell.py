@@ -135,6 +135,26 @@ precmd_functions=(extra_precmd)
         output = shell.read_until(b"chad: ") + shell.read_until(b"\r\n")
         self.assertRegex(output, b"New folder|Directory made")
 
+    def test_configured_name_in_startup_debug_and_helper_crash(self):
+        shell = self.shell('name = "Boris"\nai_enabled = false\ndebug = true\n', show_startup=True)
+        output = shell.read_until(b"boris debug:")
+        self.assertRegex(output, b"boris: (Boris awake|Terminal here. Boris)")
+        self.assertNotIn(b"Brain gone", output)
+        self.assertNotIn(b"Chad", output)
+        shell.command('kill -KILL $_CHADLIKE_PID; wait $_CHADLIKE_PID 2>/dev/null')
+        output = shell.command("mkdir sample")
+        self.assertIn(b"boris: Brain gone. Boris still here.", output)
+        self.assertNotIn(b"Brain gone", shell.command("mkdir another"))
+
+    def test_configured_name_in_ai_prompt_and_tag(self):
+        server = FakeOllama()
+        shell = self.shell(f'name = "Boris"\n[ollama]\nhost = "{server.host}"\n')
+        with server:
+            shell.command("mkdir sample")
+            output = shell.read_until(b"The remote now shares responsibility for this code.")
+            self.assertIn(b"boris: ", output)
+            self.assertIn("You are Boris,", server.requests[0][1]["messages"][0]["content"])
+
     def test_delayed_ai_does_not_block_or_change_partial_input(self):
         server = FakeOllama(delay=0.6)
         shell = self.shell(f'[ollama]\nhost = "{server.host}"\ntimeout_seconds = 2.0\n')

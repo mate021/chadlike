@@ -137,7 +137,7 @@ _chadlike_precmd() {
                 syswrite -o $_CHADLIKE_IN "$packet" 2>/dev/null || true
             fi
         elif [[ -z ${_CHADLIKE_DEAD_REPORTED-} ]]; then
-            print -r -- 'chad: Brain gone. Chad still here.'
+            [[ -n $_CHADLIKE_EMERGENCY ]] && print -r -- "$_CHADLIKE_EMERGENCY"
             _CHADLIKE_DEAD_REPORTED=1
         fi
     fi
@@ -161,6 +161,10 @@ _chadlike_ready() {
             _CHADLIKE_BUFFER=${_CHADLIKE_BUFFER#*$'\n'}
             stamp=${line%%$'\t'*}
             text=${line#*$'\t'}
+            if [[ $stamp == emergency ]]; then
+                _CHADLIKE_EMERGENCY=$text
+                continue
+            fi
             # Discard comments held while a foreground application owned the tty.
             [[ $stamp == <->.<-> && ${CHADLIKE_DISABLED:-0} != 1 ]] || continue
             (( EPOCHREALTIME - stamp < 15 )) || continue
@@ -192,7 +196,7 @@ chadlike-off() {
     add-zsh-hook -d preexec _chadlike_preexec
     add-zsh-hook -d precmd _chadlike_precmd
     add-zsh-hook -d zshexit _chadlike_cleanup
-    unset _CHADLIKE_LOADED _CHADLIKE_DEAD_REPORTED
+    unset _CHADLIKE_LOADED _CHADLIKE_DEAD_REPORTED _CHADLIKE_EMERGENCY
     return 0
 }
 
@@ -215,7 +219,7 @@ _chadlike_setup() {
         "$python" -B "$backend" session "$_CHADLIKE_DIR" $$ </dev/null >/dev/null 2>&1 &!
     _CHADLIKE_PID=$!
     unset _CHADLIKE_COMMAND
-    typeset -g _CHADLIKE_CATEGORY='' _CHADLIKE_BUFFER='' _CHADLIKE_LOADED=1
+    typeset -g _CHADLIKE_CATEGORY='' _CHADLIKE_BUFFER='' _CHADLIKE_EMERGENCY='' _CHADLIKE_LOADED=1
     typeset -gF _CHADLIKE_STARTED=0
     # First in the arrays captures status before other array hooks can change it.
     add-zsh-hook preexec _chadlike_preexec
